@@ -1,0 +1,40 @@
+import type { HistoryItem } from '@/lib/types'
+
+export const historyItems: HistoryItem[] = [
+  {
+    id: 'history-1',
+    date: '04 Sep 2026',
+    crop: 'Wheat',
+    farmName: 'My Wheat Farm',
+    disease: 'Leaf Blight',
+    confidence: '94%',
+    severity: 'Moderate',
+    severityTone: 'amber',
+    icon: '🌾',
+    opensResult: true,
+  },
+  {
+    id: 'history-2',
+    date: '28 Aug 2026',
+    crop: 'Wheat',
+    farmName: 'My Wheat Farm',
+    disease: 'Healthy',
+    confidence: '92%',
+    severity: 'Good',
+    severityTone: 'green',
+    icon: '🌾',
+    opensResult: false,
+  },
+  {
+    id: 'history-3',
+    date: '20 Aug 2026',
+    crop: 'Potato',
+    farmName: 'My Wheat Farm',
+    disease: 'Early Blight',
+    confidence: '89%',
+    severity: 'Moderate',
+    severityTone: 'amber',
+    icon: '🥔',
+    opensResult: false,
+  },
+]
