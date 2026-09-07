@@ -14,7 +14,9 @@ import {
 
 import { go, type AppRouter } from '@/lib/navigation'
 
-import { getCropCheckState } from '@/lib/crop-check-store'
+import {
+  getCropCheckState,
+} from '@/lib/crop-check-store'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 
@@ -22,6 +24,19 @@ import { Button } from '@/components/ui/button'
 
 import { StatusBadge } from '@/components/ui/status-badge'
 
+
+// ============================================================
+// API URL
+// ============================================================
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://127.0.0.1:8000'
+
+
+// ============================================================
+// RESULT TYPE
+// ============================================================
 
 type AnalysisResult = {
   scan_id?: number
@@ -56,6 +71,10 @@ type AnalysisResult = {
 }
 
 
+// ============================================================
+// COMPONENT
+// ============================================================
+
 export function Result({
   router,
 }: {
@@ -63,34 +82,253 @@ export function Result({
 }) {
 
   const [result, setResult] =
-    useState<AnalysisResult | null>(null)
+    useState<AnalysisResult | null>(
+      null
+    )
 
   const [previewUrl, setPreviewUrl] =
-    useState<string | null>(null)
+    useState<string | null>(
+      null
+    )
 
+  const [loading, setLoading] =
+    useState(true
+    )
+
+  const [error, setError] =
+    useState<string | null>(
+      null
+    )
+
+
+  // ==========================================================
+  // LOAD RESULT
+  // ==========================================================
 
   useEffect(() => {
 
-    const session = getCropCheckState()
+    async function loadResult() {
 
-    if (session.result) {
+      try {
 
-      setResult(
-        session.result as AnalysisResult
-      )
+        setLoading(true)
+
+        setError(null)
+
+
+        // ----------------------------------------------------
+        // CHECK URL FOR scan_id
+        // ----------------------------------------------------
+
+        const params =
+          new URLSearchParams(
+            window.location.search
+          )
+
+        const scanId =
+          params.get('scan_id')
+
+
+        // ====================================================
+        // HISTORY RESULT
+        // ====================================================
+
+        if (scanId) {
+
+          console.log(
+            'Loading historical scan:',
+            scanId
+          )
+
+
+          const response =
+            await fetch(
+              `${API_BASE_URL}/analysis-summary?scan_id=${scanId}`,
+              {
+                method: 'GET',
+                cache: 'no-store',
+              }
+            )
+
+
+          if (!response.ok) {
+
+            throw new Error(
+              `Failed to load scan ${scanId}`
+            )
+          }
+
+
+          const data =
+            await response.json()
+
+
+          if (
+            data.status !==
+              'success' ||
+            !data.data
+          ) {
+
+            throw new Error(
+              data.message ||
+                'Historical result not found.'
+            )
+          }
+
+
+          // ------------------------------------------------
+          // SET HISTORICAL RESULT
+          // ------------------------------------------------
+
+          const historicalResult =
+            data.data as AnalysisResult
+
+
+          setResult(
+            historicalResult
+          )
+
+
+          if (
+            historicalResult.image_url
+          ) {
+
+            setPreviewUrl(
+              historicalResult.image_url
+            )
+
+          }
+
+
+          return
+        }
+
+
+        // ====================================================
+        // CURRENT CROP CHECK
+        // ====================================================
+
+        const session =
+          getCropCheckState()
+
+
+        if (session.result) {
+
+          setResult(
+            session.result as AnalysisResult
+          )
+
+        }
+
+
+        if (
+          session.imagePreviewUrl
+        ) {
+
+          setPreviewUrl(
+            session.imagePreviewUrl
+          )
+
+        }
+
+      } catch (error) {
+
+        console.error(
+          'Error loading result:',
+          error
+        )
+
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to load result.'
+        )
+
+      } finally {
+
+        setLoading(false)
+
+      }
 
     }
 
-    if (session.imagePreviewUrl) {
 
-      setPreviewUrl(
-        session.imagePreviewUrl
-      )
-
-    }
+    loadResult()
 
   }, [])
 
+
+  // ==========================================================
+  // LOADING SCREEN
+  // ==========================================================
+
+  if (loading) {
+
+    return (
+      <>
+        <PageHeader
+          eyebrow="ANALYSIS"
+          title="Loading result"
+          subtitle="Please wait while we load the crop analysis."
+        />
+
+        <div className="card">
+
+          <p>
+            Loading crop analysis...
+          </p>
+
+        </div>
+      </>
+    )
+
+  }
+
+
+  // ==========================================================
+  // ERROR
+  // ==========================================================
+
+  if (error) {
+
+    return (
+      <>
+        <PageHeader
+          eyebrow="ANALYSIS"
+          title="Unable to load result"
+          subtitle={error}
+        />
+
+        <div className="card">
+
+          <Button
+            className="primary-button"
+            onClick={() =>
+              go(
+                router,
+                '/history'
+              )
+            }
+          >
+            Back to history
+
+            <ArrowRight
+              data-icon="inline-end"
+            />
+
+          </Button>
+
+        </div>
+      </>
+    )
+
+  }
+
+
+  // ==========================================================
+  // NO RESULT
+  // ==========================================================
 
   if (!result) {
 
@@ -103,43 +341,66 @@ export function Result({
         />
 
         <div className="card">
+
           <Button
             className="primary-button"
             onClick={() =>
-              go(router, '/check-crop')
+              go(
+                router,
+                '/check-crop'
+              )
             }
           >
             Start Crop Check
-            <ArrowRight data-icon="inline-end" />
+
+            <ArrowRight
+              data-icon="inline-end"
+            />
+
           </Button>
+
         </div>
       </>
     )
+
   }
 
 
+  // ==========================================================
+  // BASIC VALUES
+  // ==========================================================
+
   const disease =
-    result.disease || 'Unknown'
+    result.disease ||
+    'Unknown'
 
 
   const confidence =
     result.confidence_percent ??
     Math.round(
-      (result.confidence ?? 0) * 100
+      (result.confidence ?? 0) *
+        100
     )
 
 
   const riskLevel =
-    result.risk_level || 'Unknown'
+    result.risk_level ||
+    'Unknown'
 
 
   const isHealthy =
-    disease.toLowerCase() === 'healthy'
+    disease.toLowerCase() ===
+    'healthy'
 
 
   const isHighRisk =
-    riskLevel === 'High Risk'
+    riskLevel ===
+    'High Risk'
 
+
+  // ==========================================================
+  // BADGE COLOR
+  // ==========================================================
 
   const badgeTone =
     isHealthy
@@ -149,39 +410,64 @@ export function Result({
         : 'yellow'
 
 
+  // ==========================================================
+  // IMAGE
+  // ==========================================================
+
   const image =
     previewUrl ||
     result.image_url ||
     null
 
 
+  // ==========================================================
+  // PAGE
+  // ==========================================================
+
   return (
     <>
       <PageHeader
+
         eyebrow="ANALYSIS COMPLETE"
+
         title="Crop health result"
+
         subtitle={
           `Here's what we found in your ${
             result.crop
           } crop.`
         }
+
         action={
+
           <button
             type="button"
             className="icon-button"
             aria-label="More result actions"
           >
+
             <MoreHorizontal />
+
           </button>
+
         }
+
       />
 
 
       <div className="result-layout">
 
+
+        {/* ==================================================
+            LEFT SIDE
+        ================================================== */}
+
         <div className="result-main">
 
-          {/* RESULT CARD */}
+
+          {/* =================================================
+              RESULT CARD
+          ================================================= */}
 
           <section className="card result-card">
 
@@ -201,8 +487,11 @@ export function Result({
               )}
 
               <span>
+
                 <Check />
+
                 Image analyzed
+
               </span>
 
             </div>
@@ -210,14 +499,20 @@ export function Result({
 
             <div className="result-details">
 
+
               <div className="result-title">
+
 
                 <span className="warning-symbol">
 
                   {isHealthy ? (
+
                     <Check />
+
                   ) : (
+
                     <AlertTriangle />
+
                   )}
 
                 </span>
@@ -235,7 +530,9 @@ export function Result({
 
 
                   <h2>
+
                     {disease}
+
                   </h2>
 
                 </div>
@@ -244,22 +541,34 @@ export function Result({
                 <StatusBadge
                   tone={badgeTone}
                 >
+
                   {riskLevel.toUpperCase()}
+
                 </StatusBadge>
+
 
               </div>
 
+
+              {/* ==========================================
+                  RESULT META
+              ========================================== */}
 
               <div className="result-meta">
 
+
                 <span>
 
                   <strong>
+
                     {confidence}%
+
                   </strong>
 
                   <small>
+
                     Confidence
+
                   </small>
 
                 </span>
@@ -268,11 +577,15 @@ export function Result({
                 <span>
 
                   <strong>
+
                     {result.crop}
+
                   </strong>
 
                   <small>
+
                     Crop
+
                   </small>
 
                 </span>
@@ -281,19 +594,30 @@ export function Result({
                 <span>
 
                   <strong>
-                    {result.city || 'Nashik'}
+
+                    {result.city ||
+                      'Nashik'}
+
                   </strong>
 
                   <small>
+
                     Location
+
                   </small>
 
                 </span>
+
 
               </div>
 
+
             </div>
 
+
+            {/* =============================================
+                DISCLAIMER
+            ============================================= */}
 
             <p className="disclaimer">
 
@@ -305,105 +629,159 @@ export function Result({
 
             </p>
 
+
           </section>
 
 
-          {/* WHAT WE FOUND */}
+          {/* =================================================
+              WHAT WE FOUND
+          ================================================= */}
 
           <section className="card found-card">
 
+
             <p className="eyebrow">
+
               WHAT WE FOUND
+
             </p>
 
 
             <h2>
+
               {isHealthy
                 ? 'Your crop appears healthy'
                 : `${disease} detected`}
+
             </h2>
 
 
             <p>
+
               {result.overall_status ||
                 `The system detected ${disease} with ${confidence}% confidence.`}
+
             </p>
 
 
             <div className="symptoms">
 
+
               <span>
+
                 <Check />
-                Detection confidence: {confidence}%
+
+                Detection confidence:
+                {' '}
+                {confidence}%
+
               </span>
 
 
-              {result.temperature !== undefined && (
+              {result.temperature !==
+                undefined && (
 
                 <span>
+
                   <Check />
-                  Temperature: {result.temperature}°C
+
+                  Temperature:
+                  {' '}
+                  {result.temperature}°C
+
                 </span>
 
               )}
 
 
-              {result.humidity !== undefined && (
+              {result.humidity !==
+                undefined && (
 
                 <span>
+
                   <Check />
-                  Humidity: {result.humidity}%
+
+                  Humidity:
+                  {' '}
+                  {result.humidity}%
+
                 </span>
 
               )}
+
 
             </div>
+
 
           </section>
 
 
-          {/* ACTION CARD */}
+          {/* =================================================
+              ACTION CARD
+          ================================================= */}
 
           <section className="card action-card">
 
+
             <div className="recommendation-icon">
+
               <Sprout />
+
             </div>
 
 
             <div>
 
+
               <p className="eyebrow">
+
                 WHAT SHOULD YOU DO?
+
               </p>
 
 
               <h2>
+
                 Recommended action
+
               </h2>
 
 
               <ol>
 
+
                 {result.action && (
+
                   <li>
+
                     {result.action}
+
                   </li>
+
                 )}
 
 
                 {result.recommendation && (
+
                   <li>
+
                     {result.recommendation}
+
                   </li>
+
                 )}
 
 
                 {result.warning && (
+
                   <li>
+
                     {result.warning}
+
                   </li>
+
                 )}
+
 
               </ol>
 
@@ -411,37 +789,61 @@ export function Result({
               <Button
                 className="primary-button"
                 onClick={() =>
-                  go(router, '/advisory')
+                  go(
+                    router,
+                    '/advisory'
+                  )
                 }
               >
+
                 View full advisory
-                <ArrowRight data-icon="inline-end" />
+
+                <ArrowRight
+                  data-icon="inline-end"
+                />
+
               </Button>
+
 
             </div>
 
+
           </section>
+
 
         </div>
 
 
-        {/* RIGHT SIDE */}
+        {/* ==================================================
+            RIGHT SIDE
+        ================================================== */}
 
         <aside className="result-side">
 
+
+          {/* =================================================
+              RISK CARD
+          ================================================= */}
+
           <section className="card mini-risk">
 
+
             <div className="section-heading">
+
 
               <div>
 
                 <p className="eyebrow">
+
                   CURRENT RISK
+
                 </p>
 
 
                 <h2>
+
                   {riskLevel}
+
                 </h2>
 
               </div>
@@ -449,13 +851,18 @@ export function Result({
 
               <StatusBadge tone="red">
 
-                {result.risk_score !== undefined
+                {result.risk_score !==
+                undefined
+
                   ? `${Math.round(
-                      result.risk_score * 100
+                      result.risk_score *
+                        100
                     )}%`
+
                   : 'N/A'}
 
               </StatusBadge>
+
 
             </div>
 
@@ -472,27 +879,46 @@ export function Result({
               type="button"
               className="text-button"
               onClick={() =>
-                go(router, '/risk')
+                go(
+                  router,
+                  '/risk'
+                )
               }
             >
+
               Why is risk high?
+
               <ArrowRight />
+
             </button>
+
 
           </section>
 
+
+          {/* =================================================
+              SAVE RESULT
+          ================================================= */}
 
           <Button
             className="save-button"
             variant="outline"
           >
-            <FileText data-icon="inline-start" />
+
+            <FileText
+              data-icon="inline-start"
+            />
+
             Save result
+
           </Button>
+
 
         </aside>
 
+
       </div>
+
     </>
   )
 }
