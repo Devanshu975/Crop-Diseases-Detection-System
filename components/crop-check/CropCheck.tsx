@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  Loader2,
   MapPin,
   Sprout,
 } from 'lucide-react'
@@ -29,24 +30,21 @@ import { Button } from '@/components/ui/button'
 
 import { ImageUploader } from '@/components/crop-check/ImageUploader'
 
-
 // ============================================================
-// AVAILABLE CITIES
+// TYPES
 // ============================================================
 
-const cities = [
-  'Meerut',
-  'Nashik',
-  'Pune',
-  'Mumbai',
-  'Nagpur',
-  'Aurangabad',
-  'Ahmednagar',
-  'Kolhapur',
-  'Solapur',
-  'Amravati',
-]
-
+type CityResult = {
+  name: string
+  state?: string
+  country?: string
+  country_code?: string
+  latitude?: number
+  longitude?: number
+  timezone?: string
+  population?: number
+  feature_code?: string
+}
 
 // ============================================================
 // STEPS
@@ -89,7 +87,6 @@ function Steps({ current }: { current: number }) {
   )
 }
 
-
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
@@ -99,18 +96,38 @@ export function CropCheck({
 }: {
   router: AppRouter
 }) {
-
   // ==========================================================
-  // STATES
+  // CROP
   // ==========================================================
 
   const [crop, setCrop] = useState(
     defaultCrop.name
   )
 
-  const [city, setCity] = useState(
-    'Meerut'
-  )
+  // ==========================================================
+  // CITY
+  // ==========================================================
+
+  const [city, setCity] = useState('')
+
+  const [citySearch, setCitySearch] =
+    useState('')
+
+  const [cityResults, setCityResults] =
+    useState<CityResult[]>([])
+
+  const [showCityResults, setShowCityResults] =
+    useState(false)
+
+  const [isSearchingCity, setIsSearchingCity] =
+    useState(false)
+
+  const [cityError, setCityError] =
+    useState('')
+
+  // ==========================================================
+  // IMAGE
+  // ==========================================================
 
   const [file, setFile] =
     useState<File | null>(null)
@@ -118,18 +135,42 @@ export function CropCheck({
   const [previewUrl, setPreviewUrl] =
     useState<string | null>(null)
 
+  // ==========================================================
+  // ANALYSIS
+  // ==========================================================
+
   const [isAnalyzing, setIsAnalyzing] =
     useState(false)
 
+  // ==========================================================
+  // LOAD PREVIOUS CITY
+  // ==========================================================
+
+  useEffect(() => {
+    try {
+      const savedCity =
+        localStorage.getItem(
+          'selectedCity'
+        )
+
+      if (savedCity) {
+        setCity(savedCity)
+        setCitySearch(savedCity)
+      }
+    } catch (error) {
+      console.error(
+        'Unable to load saved city:',
+        error
+      )
+    }
+  }, [])
 
   // ==========================================================
   // CLEANUP IMAGE URL
   // ==========================================================
 
   useEffect(() => {
-
     return () => {
-
       if (
         previewUrl &&
         previewUrl.startsWith('blob:')
@@ -138,11 +179,221 @@ export function CropCheck({
           previewUrl
         )
       }
-
     }
-
   }, [previewUrl])
 
+  // ==========================================================
+  // SEARCH CITY / TOWN
+  // ==========================================================
+
+  useEffect(() => {
+    const query =
+      citySearch.trim()
+
+    // --------------------------------------------------------
+    // DON'T SEARCH FOR EMPTY / VERY SHORT INPUT
+    // --------------------------------------------------------
+
+    if (query.length < 2) {
+      setCityResults([])
+      setIsSearchingCity(false)
+      return
+    }
+
+    // --------------------------------------------------------
+    // DON'T SEARCH AGAIN IF USER HAS SELECTED
+    // THE SAME CITY
+    // --------------------------------------------------------
+
+    if (
+      city &&
+      query.toLowerCase() ===
+        city.toLowerCase()
+    ) {
+      setCityResults([])
+      setIsSearchingCity(false)
+      return
+    }
+
+    // --------------------------------------------------------
+    // ABORT PREVIOUS REQUEST
+    // --------------------------------------------------------
+
+    const controller =
+      new AbortController()
+
+    // --------------------------------------------------------
+    // DEBOUNCE SEARCH
+    // --------------------------------------------------------
+
+    const timer = setTimeout(
+      async () => {
+        try {
+          setIsSearchingCity(true)
+          setCityError('')
+
+          const response =
+            await fetch(
+              `http://127.0.0.1:8000/search-cities?q=${encodeURIComponent(
+                query
+              )}`,
+              {
+                method: 'GET',
+                signal:
+                  controller.signal,
+              }
+            )
+
+          if (!response.ok) {
+            throw new Error(
+              'Unable to search locations.'
+            )
+          }
+
+          const data =
+            await response.json()
+
+          const results =
+            Array.isArray(data)
+              ? data
+              : data.results || []
+
+          setCityResults(results)
+
+          setShowCityResults(true)
+        } catch (error) {
+          if (
+            error instanceof DOMException &&
+            error.name ===
+              'AbortError'
+          ) {
+            return
+          }
+
+          console.error(
+            'CITY SEARCH ERROR:',
+            error
+          )
+
+          setCityResults([])
+        } finally {
+          setIsSearchingCity(false)
+        }
+      },
+      350
+    )
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [citySearch, city])
+
+  // ==========================================================
+  // SELECT CITY
+  // ==========================================================
+
+  function handleSelectCity(
+    selectedCity: CityResult
+  ) {
+    const selectedName =
+      selectedCity.name
+
+    // --------------------------------------------------------
+    // UPDATE REACT STATE
+    // --------------------------------------------------------
+
+    setCity(selectedName)
+
+    setCitySearch(selectedName)
+
+    // --------------------------------------------------------
+    // SAVE CITY FOR WEATHER PAGE
+    // --------------------------------------------------------
+
+    try {
+      localStorage.setItem(
+        'selectedCity',
+        selectedName
+      )
+
+      // Save additional information too.
+      // This allows the Weather page to use
+      // coordinates later if needed.
+
+      localStorage.setItem(
+        'selectedCityData',
+        JSON.stringify({
+          name: selectedName,
+          state:
+            selectedCity.state || '',
+          country:
+            selectedCity.country || '',
+          country_code:
+            selectedCity.country_code || '',
+          latitude:
+            selectedCity.latitude ?? null,
+          longitude:
+            selectedCity.longitude ?? null,
+          timezone:
+            selectedCity.timezone || '',
+        })
+      )
+    } catch (error) {
+      console.error(
+        'Unable to save selected city:',
+        error
+      )
+    }
+
+    // --------------------------------------------------------
+    // CLOSE SEARCH RESULTS
+    // --------------------------------------------------------
+
+    setCityResults([])
+
+    setShowCityResults(false)
+
+    setCityError('')
+  }
+
+  // ==========================================================
+  // HANDLE CITY INPUT
+  // ==========================================================
+
+  function handleCityChange(
+    value: string
+  ) {
+    setCitySearch(value)
+
+    // Previous city is no longer valid
+    // because the user changed the text.
+
+    setCity('')
+
+    setCityError('')
+
+    setShowCityResults(true)
+
+    // --------------------------------------------------------
+    // REMOVE OLD CITY FROM WEATHER
+    // --------------------------------------------------------
+
+    try {
+      localStorage.removeItem(
+        'selectedCity'
+      )
+
+      localStorage.removeItem(
+        'selectedCityData'
+      )
+    } catch (error) {
+      console.error(
+        'Unable to clear saved city:',
+        error
+      )
+    }
+  }
 
   // ==========================================================
   // SELECT IMAGE
@@ -151,6 +402,15 @@ export function CropCheck({
   function handleSelectFile(
     next: File
   ) {
+    // Remove previous preview URL
+    if (
+      previewUrl &&
+      previewUrl.startsWith('blob:')
+    ) {
+      URL.revokeObjectURL(
+        previewUrl
+      )
+    }
 
     const objectUrl =
       URL.createObjectURL(next)
@@ -159,47 +419,40 @@ export function CropCheck({
 
     setFile(next)
 
+    // --------------------------------------------------------
+    // SAVE IMAGE PREVIEW
+    // --------------------------------------------------------
+
     const reader =
       new FileReader()
 
     reader.onload = (e) => {
-
       const dataUrl =
         e.target?.result as string
 
       saveCropCheckState({
-
         selectedCrop: crop,
-
         imagePreviewUrl:
           dataUrl,
-
-        fileName:
-          next.name,
-
+        fileName: next.name,
       })
-
     }
 
     reader.readAsDataURL(next)
   }
-
 
   // ==========================================================
   // CLEAR IMAGE
   // ==========================================================
 
   function handleClearFile() {
-
     if (
       previewUrl &&
       previewUrl.startsWith('blob:')
     ) {
-
       URL.revokeObjectURL(
         previewUrl
       )
-
     }
 
     setPreviewUrl(null)
@@ -207,68 +460,66 @@ export function CropCheck({
     setFile(null)
 
     saveCropCheckState({
-
       imagePreviewUrl: null,
-
       fileName: null,
-
     })
-
   }
-
 
   // ==========================================================
   // ANALYZE CROP
   // ==========================================================
 
   async function handleAnalyze() {
-
     // --------------------------------------------------------
     // CHECK IMAGE
     // --------------------------------------------------------
 
     if (!file) {
-
       alert(
         'Please select an image first.'
       )
 
       return
-
     }
-
 
     // --------------------------------------------------------
     // CHECK CITY
     // --------------------------------------------------------
 
     if (!city) {
-
-      alert(
-        'Please select a city first.'
+      setCityError(
+        'Please select a real city or town from the suggestions.'
       )
 
       return
-
     }
 
+    // --------------------------------------------------------
+    // CHECK THAT INPUT MATCHES SELECTED CITY
+    // --------------------------------------------------------
+
+    if (
+      citySearch.trim().toLowerCase() !==
+      city.toLowerCase()
+    ) {
+      setCityError(
+        'Please select a city or town from the suggestions.'
+      )
+
+      return
+    }
 
     // --------------------------------------------------------
     // PREVENT DOUBLE REQUEST
     // --------------------------------------------------------
 
     if (isAnalyzing) {
-
       return
-
     }
-
 
     setIsAnalyzing(true)
 
-
     try {
-
       console.log(
         '================================='
       )
@@ -302,6 +553,21 @@ export function CropCheck({
         file.size
       )
 
+      // ======================================================
+      // MAKE SURE CITY IS SAVED
+      // ======================================================
+
+      try {
+        localStorage.setItem(
+          'selectedCity',
+          city
+        )
+      } catch (error) {
+        console.error(
+          'Unable to save city:',
+          error
+        )
+      }
 
       // ======================================================
       // CREATE FORM DATA
@@ -315,7 +581,6 @@ export function CropCheck({
         file
       )
 
-
       // ======================================================
       // BACKEND URL
       // ======================================================
@@ -325,12 +590,10 @@ export function CropCheck({
         `?crop=${encodeURIComponent(crop)}` +
         `&city=${encodeURIComponent(city)}`
 
-
       console.log(
         'Sending request to:',
         url
       )
-
 
       // ======================================================
       // SEND REQUEST
@@ -345,7 +608,6 @@ export function CropCheck({
           }
         )
 
-
       console.log(
         'Backend status:',
         response.status
@@ -356,7 +618,6 @@ export function CropCheck({
         response.statusText
       )
 
-
       // ======================================================
       // READ RESPONSE
       // ======================================================
@@ -364,25 +625,37 @@ export function CropCheck({
       const responseText =
         await response.text()
 
-
       console.log(
         'RAW BACKEND RESPONSE:',
         responseText
       )
-
 
       // ======================================================
       // CHECK HTTP STATUS
       // ======================================================
 
       if (!response.ok) {
+        let errorMessage =
+          responseText
+
+        try {
+          const errorData =
+            JSON.parse(
+              responseText
+            )
+
+          errorMessage =
+            errorData.detail ||
+            errorData.message ||
+            responseText
+        } catch {
+          // Keep original response text.
+        }
 
         throw new Error(
-          `Backend returned ${response.status}: ${responseText}`
+          `Backend returned ${response.status}: ${errorMessage}`
         )
-
       }
-
 
       // ======================================================
       // PARSE JSON
@@ -391,52 +664,40 @@ export function CropCheck({
       let backendResult: any
 
       try {
-
         backendResult =
           JSON.parse(
             responseText
           )
-
       } catch {
-
         throw new Error(
           'Backend did not return valid JSON.'
         )
-
       }
-
 
       console.log(
         'PARSED BACKEND RESULT:',
         backendResult
       )
 
-
       // ======================================================
       // CHECK RESPONSE
       // ======================================================
 
       if (!backendResult) {
-
         throw new Error(
           'Backend returned an empty response.'
         )
-
       }
-
 
       if (
         backendResult.status ===
         'error'
       ) {
-
         throw new Error(
           backendResult.message ||
-          'Backend analysis failed.'
+            'Backend analysis failed.'
         )
-
       }
-
 
       // ======================================================
       // GET ANALYSIS DATA
@@ -446,21 +707,17 @@ export function CropCheck({
         backendResult.data ??
         backendResult
 
-
       console.log(
         'FINAL ANALYSIS RESULT:',
         analysisResult
       )
-
 
       // ======================================================
       // SAVE RESULT
       // ======================================================
 
       saveCropCheckState({
-
-        selectedCrop:
-          crop,
+        selectedCrop: crop,
 
         imagePreviewUrl:
           previewUrl,
@@ -470,19 +727,15 @@ export function CropCheck({
 
         result:
           analysisResult,
-
       })
-
 
       console.log(
         'Analysis saved successfully.'
       )
 
-
       console.log(
         '================================='
       )
-
 
       // ======================================================
       // GO TO ANALYZING PAGE
@@ -492,10 +745,7 @@ export function CropCheck({
         router,
         '/check-crop/analyzing'
       )
-
-
     } catch (error) {
-
       console.error(
         '================================='
       )
@@ -510,26 +760,18 @@ export function CropCheck({
         '================================='
       )
 
-
       const message =
         error instanceof Error
           ? error.message
           : String(error)
 
-
       alert(
         `Crop analysis failed.\n\n${message}`
       )
-
-
     } finally {
-
       setIsAnalyzing(false)
-
     }
-
   }
-
 
   // ============================================================
   // UI
@@ -543,7 +785,6 @@ export function CropCheck({
         subtitle="Select your location and crop, then upload a photo to detect possible diseases or pests."
       />
 
-
       <Steps
         current={
           file
@@ -552,20 +793,17 @@ export function CropCheck({
         }
       />
 
-
       <div className="check-layout">
 
-
-        {/* ================================================== */}
-        {/* MAIN FORM */}
-        {/* ================================================== */}
+        {/* ==================================================
+            MAIN FORM
+        ================================================== */}
 
         <section className="card form-card">
 
-
-          {/* ================================================= */}
-          {/* FARM */}
-          {/* ================================================= */}
+          {/* =================================================
+              FARM
+          ================================================= */}
 
           <div className="form-section">
 
@@ -598,10 +836,9 @@ export function CropCheck({
 
           </div>
 
-
-          {/* ================================================= */}
-          {/* CITY */}
-          {/* ================================================= */}
+          {/* =================================================
+              LOCATION
+          ================================================= */}
 
           <div className="form-section">
 
@@ -612,7 +849,8 @@ export function CropCheck({
             <div
               className="select-card"
               style={{
-                position: 'relative',
+                position:
+                  'relative',
               }}
             >
 
@@ -625,58 +863,249 @@ export function CropCheck({
               >
 
                 <small>
-                  CITY
+                  CITY / TOWN
                 </small>
 
-                <select
-                  value={city}
-                  onChange={(e) => {
-
-                    const selectedCity =
-                      e.target.value
-
-                    setCity(
-                      selectedCity
+                <input
+                  type="text"
+                  value={citySearch}
+                  placeholder="Search city or town..."
+                  autoComplete="off"
+                  onFocus={() => {
+                    setShowCityResults(
+                      true
                     )
-
+                  }}
+                  onChange={(e) => {
+                    handleCityChange(
+                      e.target.value
+                    )
+                  }}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key ===
+                      'Escape'
+                    ) {
+                      setShowCityResults(
+                        false
+                      )
+                    }
                   }}
                   style={{
-                    width: '100%',
-                    border: 'none',
-                    outline: 'none',
+                    width:
+                      '100%',
+                    border:
+                      'none',
+                    outline:
+                      'none',
                     background:
                       'transparent',
-                    fontSize: '1rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
+                    fontSize:
+                      '1rem',
+                    fontWeight:
+                      600,
                   }}
-                >
-
-                  {cities.map(
-                    (item) => (
-                      <option
-                        key={item}
-                        value={item}
-                      >
-                        {item}
-                      </option>
-                    )
-                  )}
-
-                </select>
+                />
 
               </span>
 
-              <ChevronDown />
+              {isSearchingCity ? (
+                <Loader2
+                  size={20}
+                  className="animate-spin"
+                />
+              ) : (
+                <ChevronDown />
+              )}
+
+              {/* =================================================
+                  SEARCH RESULTS
+              ================================================= */}
+
+              {showCityResults &&
+                citySearch.trim()
+                  .length >= 2 &&
+                !city && (
+                  <div
+                    style={{
+                      position:
+                        'absolute',
+                      top:
+                        'calc(100% + 8px)',
+                      left: 0,
+                      right: 0,
+                      zIndex:
+                        100,
+                      background:
+                        'white',
+                      border:
+                        '1px solid #e5e7eb',
+                      borderRadius:
+                        '12px',
+                      boxShadow:
+                        '0 12px 30px rgba(0,0,0,0.12)',
+                      maxHeight:
+                        '300px',
+                      overflowY:
+                        'auto',
+                    }}
+                  >
+
+                    {cityResults.length >
+                    0 ? (
+                      cityResults.map(
+                        (
+                          item,
+                          index
+                        ) => (
+                          <button
+                            key={`${item.name}-${item.state}-${item.country}-${index}`}
+                            type="button"
+                            onClick={() =>
+                              handleSelectCity(
+                                item
+                              )
+                            }
+                            style={{
+                              width:
+                                '100%',
+                              display:
+                                'flex',
+                              alignItems:
+                                'center',
+                              gap:
+                                '12px',
+                              padding:
+                                '13px 14px',
+                              border:
+                                'none',
+                              background:
+                                'transparent',
+                              textAlign:
+                                'left',
+                              cursor:
+                                'pointer',
+                            }}
+                          >
+
+                            <MapPin
+                              size={
+                                18
+                              }
+                            />
+
+                            <span>
+
+                              <strong
+                                style={{
+                                  display:
+                                    'block',
+                                }}
+                              >
+                                {
+                                  item.name
+                                }
+                              </strong>
+
+                              <small
+                                style={{
+                                  display:
+                                    'block',
+                                  color:
+                                    '#6b7280',
+                                  marginTop:
+                                    '3px',
+                                }}
+                              >
+
+                                {item.state
+                                  ? item.state
+                                  : ''}
+
+                                {item.state &&
+                                item.country
+                                  ? ', '
+                                  : ''}
+
+                                {item.country
+                                  ? item.country
+                                  : ''}
+
+                              </small>
+
+                            </span>
+
+                          </button>
+                        )
+                      )
+                    ) : !isSearchingCity ? (
+                      <div
+                        style={{
+                          padding:
+                            '18px',
+                          textAlign:
+                            'center',
+                          color:
+                            '#6b7280',
+                          fontSize:
+                            '0.9rem',
+                        }}
+                      >
+                        No matching city
+                        or town found.
+                      </div>
+                    ) : null}
+
+                  </div>
+                )}
 
             </div>
 
+            {/* =================================================
+                ERROR
+            ================================================= */}
+
+            {cityError && (
+              <p
+                style={{
+                  color:
+                    '#dc2626',
+                  fontSize:
+                    '0.85rem',
+                  marginTop:
+                    '8px',
+                }}
+              >
+                {cityError}
+              </p>
+            )}
+
+            {/* =================================================
+                SUCCESS
+            ================================================= */}
+
+            {city &&
+              !cityError && (
+                <p
+                  style={{
+                    color:
+                      '#16a34a',
+                    fontSize:
+                      '0.85rem',
+                    marginTop:
+                      '8px',
+                  }}
+                >
+                  ✓ Location selected:{' '}
+                  {city}
+                </p>
+              )}
+
           </div>
 
-
-          {/* ================================================= */}
-          {/* CROP */}
-          {/* ================================================= */}
+          {/* =================================================
+              CROP
+          ================================================= */}
 
           <div className="form-section">
 
@@ -684,34 +1113,34 @@ export function CropCheck({
               3. Select crop
             </label>
 
-
             <div className="crop-grid">
 
               {crops.map(
                 (item) => (
-
                   <button
                     type="button"
                     key={item.id}
                     className={
-                      crop === item.name
+                      crop ===
+                      item.name
                         ? 'crop-choice selected'
                         : 'crop-choice'
                     }
                     aria-pressed={
-                      crop === item.name
+                      crop ===
+                      item.name
                     }
                     onClick={() => {
-
                       setCrop(
                         item.name
                       )
 
-                      saveCropCheckState({
-                        selectedCrop:
-                          item.name,
-                      })
-
+                      saveCropCheckState(
+                        {
+                          selectedCrop:
+                            item.name,
+                        }
+                      )
                     }}
                   >
 
@@ -723,14 +1152,12 @@ export function CropCheck({
                       {item.name}
                     </strong>
 
-
                     {crop ===
                       item.name && (
-                        <Check />
-                      )}
+                      <Check />
+                    )}
 
                   </button>
-
                 )
               )}
 
@@ -738,10 +1165,9 @@ export function CropCheck({
 
           </div>
 
-
-          {/* ================================================= */}
-          {/* IMAGE */}
-          {/* ================================================= */}
+          {/* =================================================
+              IMAGE
+          ================================================= */}
 
           <div className="form-section">
 
@@ -749,10 +1175,11 @@ export function CropCheck({
               4. Add a photo
             </label>
 
-
             <ImageUploader
               file={file}
-              previewUrl={previewUrl}
+              previewUrl={
+                previewUrl
+              }
               onSelect={
                 handleSelectFile
               }
@@ -760,7 +1187,6 @@ export function CropCheck({
                 handleClearFile
               }
             />
-
 
             <p className="upload-tip">
 
@@ -774,10 +1200,9 @@ export function CropCheck({
 
           </div>
 
-
-          {/* ================================================= */}
-          {/* ANALYZE BUTTON */}
-          {/* ================================================= */}
+          {/* =================================================
+              ANALYZE BUTTON
+          ================================================= */}
 
           <Button
             className="primary-button full"
@@ -795,7 +1220,6 @@ export function CropCheck({
               ? 'Analyzing...'
               : 'Analyze crop'}
 
-
             {!isAnalyzing && (
               <ArrowRight
                 data-icon="inline-end"
@@ -804,13 +1228,11 @@ export function CropCheck({
 
           </Button>
 
-
         </section>
 
-
-        {/* ================================================== */}
-        {/* TIPS */}
-        {/* ================================================== */}
+        {/* ==================================================
+            TIPS
+        ================================================== */}
 
         <aside className="tips-panel">
 
@@ -818,57 +1240,35 @@ export function CropCheck({
             <Sprout />
           </div>
 
-
           <h3>
             Tips for a better result
           </h3>
 
-
           <ul>
 
             <li>
-
               <Check />
-
-              Get close to the
-              affected leaf
-
+              Get close to the affected leaf
             </li>
 
-
             <li>
-
               <Check />
-
-              Avoid blurry or
-              dark photos
-
+              Avoid blurry or dark photos
             </li>
 
-
             <li>
-
               <Check />
-
-              Select the city where
-              your crop is located
-
+              Search and select your actual city or town
             </li>
 
-
             <li>
-
               <Check />
-
-              Include the whole
-              plant if possible
-
+              Include the whole plant if possible
             </li>
 
           </ul>
 
         </aside>
-
 
       </div>
     </>
