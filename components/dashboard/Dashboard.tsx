@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { go, type AppRouter } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
+import { useFarmer } from '@/context/FarmerContext' // <--- 1. IMPORT GLOBAL CONTEXT
 
 import { CropCheckPrimary } from '@/components/dashboard/CropCheckPrimary'
 import { HealthCard } from '@/components/dashboard/HealthCard'
@@ -28,6 +29,8 @@ export function Dashboard({
 }: {
   router: AppRouter
 }) {
+  const { farmer } = useFarmer() // <--- 2. ACCESS GLOBAL FARMER STATE
+
   const hour = new Date().getHours()
 
   const greeting =
@@ -50,7 +53,8 @@ export function Dashboard({
     setLoading(true)
 
     const city = getSelectedCity()
-    setSelectedCity(city)
+    // Fall back to farmer's profile location if no temporary city is set
+    setSelectedCity(city || farmer.location)
 
     try {
       const history = await fetchScanHistory()
@@ -90,7 +94,7 @@ export function Dashboard({
       window.removeEventListener('focus', onFocus)
       window.removeEventListener('trix-city-changed', onFocus)
     }
-  }, [])
+  }, [farmer.location])
 
   const stats = useMemo(() => {
     const healthy = scans.filter(
@@ -118,16 +122,17 @@ export function Dashboard({
       <div className="welcome">
         <div>
           <p className="eyebrow">
-            {new Date().toLocaleDateString(undefined, {
+            {new Date().toLocaleDateString('en-US', {
               weekday: 'long',
-              day: 'numeric',
               month: 'long',
+              day: 'numeric',
               year: 'numeric',
             })}
           </p>
 
+          {/* DYNAMIC GREETING WITH FARMER NAME */}
           <h1>
-            {greeting}, Farmer
+            {greeting}, {farmer.name}
           </h1>
 
           <p className="subtitle">
@@ -157,9 +162,9 @@ export function Dashboard({
         <span>
           <small>VIEWING LOCATION</small>
 
+          {/* DYNAMIC LOCATION READOUT */}
           <strong>
-            {selectedCity ||
-              'Select a city in Crop Check'}
+            {selectedCity || farmer.location || 'Select a city in Crop Check'}
           </strong>
         </span>
 
@@ -215,7 +220,7 @@ export function Dashboard({
 
           <WeatherCard
             router={router}
-            city={selectedCity}
+            city={selectedCity || farmer.location}
           />
 
           <Recommendation
